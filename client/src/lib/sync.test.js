@@ -1,6 +1,12 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { RoomClock, correction, positionAt, formatTime } from './sync.js'
+import {
+  RoomClock,
+  bufferedAt,
+  correction,
+  positionAt,
+  formatTime,
+} from './sync.js'
 
 test('clock estimates server time using the lowest round-trip sample', () => {
   let now = 1000
@@ -35,4 +41,43 @@ test('drift correction is bounded and avoids repeated small jumps', () => {
   assert.deepEqual(correction(10, 8), { seek: 8, rate: 1 })
   assert.equal(formatTime(NaN), '0:00')
   assert.equal(formatTime(125), '2:05')
+})
+
+test('buffer recovery avoids another seek until the target has playable headroom', () => {
+  const ranges = (spans) => ({
+    length: spans.length,
+    start: (i) => spans[i][0],
+    end: (i) => spans[i][1],
+  })
+  assert.equal(bufferedAt(ranges([]), 30, 120), false)
+  assert.equal(bufferedAt(ranges([[0, 26.1]]), 30, 120), false)
+  assert.equal(bufferedAt(ranges([[0, 30.2]]), 30, 120), false)
+  assert.equal(
+    bufferedAt(
+      ranges([
+        [0, 10],
+        [29, 35],
+      ]),
+      30,
+      120,
+    ),
+    true,
+  )
+  assert.equal(
+    bufferedAt(
+      ranges([
+        [0, 10],
+        [31, 35],
+      ]),
+      30,
+      120,
+    ),
+    false,
+  )
+  assert.equal(bufferedAt(ranges([[110, 120]]), 119.8, 120), true)
+
+  const recovering = correction(26, 30, false)
+  assert.equal(recovering.seek, null)
+  assert.equal(recovering.rate, 1.03)
+  assert.deepEqual(correction(26, 30, true), { seek: 30, rate: 1 })
 })

@@ -41,7 +41,10 @@ max(0, reference position + (t - reference timestamp)/1000).
 - Clients estimate server clock offset using ping round trips and favor samples
   with lower latency. State broadcasts every two seconds refresh the reference.
 - Small drift is corrected by bounded playback-rate adjustment; larger drift is
-  corrected by seeking. Suspended tabs and reconnects request fresh state.
+  corrected by seeking only when the target is buffered with at least 750 ms of
+  playable headroom (or through the end of the track). Until then, use bounded
+  rate correction rather than restart a range download. Explicit user seeks
+  still jump immediately. Suspended tabs and reconnects request fresh state.
 - Commands include the revision observed by the sender. Stale commands return
   the current state instead of overriding a more recent operation.
 - Track-end advances use the same revision check so simultaneous clients can

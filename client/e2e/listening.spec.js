@@ -292,3 +292,84 @@ test('simultaneous end-of-track events advance the room once', async ({
   await playing(page)
   await playing(guest)
 })
+
+test('drift recovery waits for buffered audio instead of starting another download', async ({
+  page,
+}) => {
+  await create(page)
+  await upload(page)
+  await page.getByRole('button', { name: 'Play Shared melody.wav' }).click()
+  await playing(page)
+  await seek(page, 30)
+  await expect
+    .poll(() => page.locator('audio').evaluate((audio) => audio.currentTime))
+    .toBeGreaterThan(29.8)
+  await expect
+    .poll(() =>
+      page
+        .locator('audio')
+        .evaluate((audio) => !audio.seeking && audio.readyState >= 3),
+    )
+    .toBe(true)
+
+  // Emulate a listener emerging four seconds behind after a slow range fetch.
+  // Native playback continues, but the reported buffer has only 100 ms ahead.
+  // An automatic jump beyond that buffer would initiate another range request.
+  await page.locator('audio').evaluate((audio) => {
+    const descriptor = Object.getOwnPropertyDescriptor(
+      HTMLMediaElement.prototype,
+      'currentTime',
+    )
+    let lag = 4
+    window.recoverySeeks = []
+    window.recoveryBufferReady = false
+    Object.defineProperty(audio, 'currentTime', {
+      configurable: true,
+      get() {
+        return descriptor.get.call(audio) - lag
+      },
+      set(value) {
+        window.recoverySeeks.push(value)
+        lag = 0
+        descriptor.set.call(audio, value)
+      },
+    })
+    Object.defineProperty(audio, 'buffered', {
+      configurable: true,
+      get() {
+        return {
+          length: 1,
+          start: () => 0,
+          end: () =>
+            window.recoveryBufferReady ? 120 : audio.currentTime + 0.1,
+        }
+      },
+    })
+  })
+  // Wait for several correction intervals while there is insufficient buffer.
+  await expect
+    .poll(() => page.locator('audio').evaluate((audio) => audio.currentTime))
+    .toBeGreaterThan(26.8)
+  expect(await page.evaluate(() => window.recoverySeeks.length)).toBe(0)
+  expect(await page.locator('audio').evaluate((audio) => audio.paused)).toBe(
+    false,
+  )
+  await page.evaluate(() => {
+    window.recoveryBufferReady = true
+  })
+  await expect
+    .poll(() => page.evaluate(() => window.recoverySeeks.length))
+    .toBe(1)
+  await expect
+    .poll(() => page.locator('audio').evaluate((audio) => audio.currentTime))
+    .toBeGreaterThan(30)
+  // Explicit room seeks are still allowed to request an unbuffered position.
+  await page.evaluate(() => {
+    window.recoveryBufferReady = false
+  })
+  await seek(page, 80)
+  await expect
+    .poll(() => page.locator('audio').evaluate((audio) => audio.currentTime))
+    .toBeGreaterThan(79.8)
+  expect(await page.evaluate(() => window.recoverySeeks.length)).toBe(2)
+})

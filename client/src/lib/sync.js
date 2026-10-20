@@ -40,9 +40,19 @@ export function positionAt(playback, serverTime, duration = Infinity) {
   )
 }
 
-export function correction(current, target) {
+// A drift correction must not restart buffering by jumping to bytes that have
+// not arrived yet. Keep a little audio ahead of the target so playback can resume.
+export function bufferedAt(ranges, target, duration = Infinity) {
+  const end = Math.min(target + 0.75, duration)
+  for (let i = 0; i < ranges.length; i++) {
+    if (ranges.start(i) <= target && ranges.end(i) >= end) return true
+  }
+  return false
+}
+
+export function correction(current, target, canSeek = true) {
   const drift = target - current
-  if (Math.abs(drift) > 0.3) return { seek: target, rate: 1 }
+  if (Math.abs(drift) > 0.3 && canSeek) return { seek: target, rate: 1 }
   if (Math.abs(drift) < 0.04) return { seek: null, rate: 1 }
   return { seek: null, rate: Math.max(0.97, Math.min(1.03, 1 + drift * 0.15)) }
 }

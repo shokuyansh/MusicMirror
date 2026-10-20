@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { correction, positionAt } from '../lib/sync'
+import { bufferedAt, correction, positionAt } from '../lib/sync'
 
 export function usePlayback({
   room,
@@ -38,12 +38,17 @@ export function usePlayback({
       const element = audio.current
       if (!element || !snapshot?.playback.songId || element.readyState < 1)
         return
+      if (!force && element.seeking) return
       const target = positionAt(
         snapshot.playback,
         clock.current.now(),
         element.duration,
       )
-      const adjustment = correction(element.currentTime, target)
+      const canSeek =
+        force ||
+        (element.readyState >= 3 &&
+          bufferedAt(element.buffered, target, element.duration))
+      const adjustment = correction(element.currentTime, target, canSeek)
       if (
         (force || adjustment.seek !== null) &&
         Math.abs(element.currentTime - target) > 0.01
