@@ -1,322 +1,312 @@
-"use client"
+import { useEffect, useState } from 'react'
+import { useRoom } from './hooks/useRoom'
+import { usePlayback } from './hooks/usePlayback'
+import Icon from './components/Icon'
+import './App.css'
 
-import { useState, useEffect } from "react"
-import { socket } from "./Socket"
-import Songs from "./Songs"
-import "./App.css"
-import RoomInput from "./RoomInput"
-import RoomMember from "./roomMember"
-import { toast, ToastContainer } from "react-toastify"
-import axios from "axios"
-import { FaCopy,FaCheck,FaGithub } from "react-icons/fa"
-import {CiMail,CiLinkedin} from "react-icons/ci"
-function App() {
-  const [room, setRoom] = useState("")
-  const [randomName, setRandomName] = useState("")
-  const [showModal, setShowModal] = useState(true)
-  const [selectedSong, setSelectedSong] = useState(null)
-  const [songUploaded,setSongUploaded]=useState(false);
-  const [isLoading,setLoading]=useState(false);
-  const [isCopied,setisCopied]=useState(false);
+import Brand from './components/Brand'
+import Bars from './components/Bars'
+import Welcome from './components/Welcome'
+import UploadCard from './components/UploadCard'
+import Player from './components/Player'
+
+export default function App() {
+  const connection = useRoom()
+  const player = usePlayback(connection)
+  const {
+    room,
+    songs,
+    session,
+    status,
+    error,
+    setError,
+    busy,
+    enter,
+    upload,
+    refreshPlaylist,
+    leave,
+  } = connection
+  const [copied, setCopied] = useState('')
+  const connected = status === 'connected'
+  const me = room?.members.find((member) => member.id === session?.memberId)
+  const online = room?.members.filter((member) => member.connected).length || 0
   useEffect(() => {
-    const handleRandomName = (name) => {
-      setRandomName(name)
-      localStorage.setItem("name", name)
-      console.log("Random name received: " + name)
-    }
-    console.log("random_name hit")
-    socket.on("random_name", handleRandomName)
-    return () => {
-      socket.off("random_name", handleRandomName)
-    }
-  }, [socket])
-
-  useEffect(() => {
-    console.log("Page refreshed")
-    const storedRoom = localStorage.getItem("room")
-    const storedName = localStorage.getItem("name")
-    const navigationType = performance.getEntriesByType("navigation")[0].type
-    const isReload = navigationType === "reload"
-    console.log("navigation type : ", navigationType)
-    console.log("stored room : " + storedRoom)
-    console.log("stored Name : " + storedName)
-    if (isReload === true) {
-      if (storedName && storedRoom) {
-        setRoom(storedRoom)
-        setRandomName(storedName)
-        socket.emit("join_room", { room: storedRoom }, (response) => {
-          if (response.success === true) {
-            console.log("Room Joined : " + storedRoom)
-            socket.emit("room_state", { room: storedRoom })
-            setShowModal(false)
-          } else {
-            toast(response.error)
-          }
-        })
-      }
-    } else {
-      setShowModal(true)
-    }
-  }, [])
-
-  const isTimeoutError = (error) => {
-    return error.code === "ECONNABORTED" || error.message.includes("timeout") || error.message.includes("Network Error")
-  }
-  
-  const uploadSong = async () => {
-    if (!selectedSong) {
-      console.error("No song selected for upload")
-      toast("Select a song to upload")
-      return
-    }
-    const formData = new FormData()
-    formData.append("song", selectedSong)
-    formData.append("room", room)
+    if (!copied) return
+    const timer = setTimeout(() => setCopied(''), 2000)
+    return () => clearTimeout(timer)
+  }, [copied])
+  const copy = async (kind) => {
     try {
-      setLoading(true);
-      const response = await axios.post("https://musicmirrorbackend.onrender.com/api/upload", formData)
-      if(response){
-        setLoading(false);
-      }
-      console.log("Song uploaded :", response)
-      setSongUploaded(true);
-      toast("Song Uploaded,Refresh if changes not reflected")
-    } catch (error) {
-      console.error("Error uploading song: ", error)
-      toast("Error Uploading Songs")
-      if (isTimeoutError(error)) {
-        setTimeout(() => (uploadSong(), 2000))
-      }
+      const url = new URL(window.location.href)
+      url.search = ''
+      url.searchParams.set('room', room.code)
+      await navigator.clipboard.writeText(
+        kind === 'code' ? room.code : url.href,
+      )
+      setCopied(kind)
+    } catch {
+      setError(
+        'Could not copy automatically. You can select and copy the room code below.',
+      )
     }
-  }
-
-
-  const createRoom = () => {
-    try {
-      console.log("Creating a new room")
-      const newRoomId = Math.random().toString(36).substring(2, 8)
-      setRoom(newRoomId)
-      setShowModal(false)
-      localStorage.setItem("room", newRoomId)
-      localStorage.setItem("name", randomName)
-      console.log("Creating a new room : ", newRoomId)
-      socket.emit("create_room", { room: newRoomId })
-      toast("Room Created")
-    } catch (error) {
-      console.error("Error creating room: ", error)
-      toast("Error creating Room")
-    }
-  }
-
-  const joinRoom = () => {
-    try {
-      if (room !== "") {
-        socket.emit("join_room", { room }, (response) => {
-          if (response.success === true) {
-            console.log("Room Joined : " + room)
-            socket.emit("room_state", { room })
-            localStorage.setItem("room", room)
-            localStorage.setItem("name", randomName)
-            setShowModal(false)
-            toast("Room Joined")
-          } else {
-            toast(response.error)
-            setRoom("")
-          }
-        })
-      } else {
-        console.error("Room cannot be empty")
-        toast("Room cannot be empty")
-      }
-    } catch (error) {
-      console.error("Error joining room: ", error)
-      toast.error("Error Joining Room")
-    }
-  }
-  const handleCopy=async()=>{
-      try{
-        await navigator.clipboard.writeText(room);
-        setisCopied(true);
-        setTimeout(()=>{
-          setisCopied(false);
-        },2000)
-      }catch(error){{
-          console.error("Failed to copy : "+error);
-          toast("Failed to copy , retry");
-      }}
   }
 
   return (
-    <div className="app-container">
-      {showModal && (
-        <div className="modal-overlay">
-          <div className="modal-box">
-            <h2>Welcome to Music Mirror</h2>
-            <p>{randomName ? `You're joining as: ${randomName}` : "Generating your name..."}</p>
-            <div style={{ marginTop: "1rem" }}>
-              <button onClick={createRoom} className="modal-button">
-                 Create Room
-              </button>
-              <div style={{ margin: "1rem 0" }}>
-                <RoomInput
-                  onComplete={(room) => {
-                    setRoom(room)
-                  }}
-                ></RoomInput>
-                <button onClick={joinRoom} className="modal-button">
-                   Join Room
-                </button>
-              </div>
-            </div>
+    <div className={`app ${room ? 'in-room' : ''}`}>
+      <header className="site-header">
+        <Brand />
+        {room ? (
+          <div className="header-actions">
+            <span
+              className={`connection-badge ${connected ? '' : 'offline'}`}
+              role="status"
+            >
+              <span className="live-dot" />
+              {connected ? 'Connected' : 'Reconnecting'}
+            </span>
+            <button
+              className="leave-button"
+              aria-label="Leave room"
+              onClick={leave}
+            >
+              <Icon name="leave" size={17} />
+              <span>Leave room</span>
+            </button>
           </div>
+        ) : (
+          <span className="header-tagline">A shared listening space.</span>
+        )}
+      </header>
+      {error && (
+        <div className="error-banner" role="alert">
+          <span>{error}</span>
+          <button
+            className="icon-button"
+            aria-label="Dismiss message"
+            onClick={() => setError('')}
+          >
+            <Icon name="x" size={18} />
+          </button>
         </div>
       )}
-      {room && !showModal && (
-        <div className="main-layout">
-          <div className="left-column">
-            <div className="upload-section-wrapper">
-              <div className="upload-card">
-                <div className="upload-header">
-                  <div className="upload-icon">
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                      <path
-                        d="M21 15V19C21 19.5304 20.7893 20.0391 20.4142 20.4142C20.0391 20.7893 19.5304 21 19 21H5C4.46957 21 3.96086 20.7893 3.58579 20.4142C3.21071 20.0391 3 19.5304 3 19V15"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                      <path
-                        d="M7 10L12 5L17 10"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                      <path
-                        d="M12 5V15"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                    </svg>
-                  </div>
-                  <h3>Upload Music</h3>
-                  <p>Add songs to your room</p>
+      {!room && !session && <Welcome enter={enter} busy={busy} />}
+      {!room && session && (
+        <main className="connecting-screen">
+          <span className="spinner" />
+          <h1>Finding your rhythm…</h1>
+          <p>
+            Connecting to your room. A sleeping free server may take a minute to
+            wake up.
+          </p>
+          <button className="button secondary" onClick={leave}>
+            Back to the start
+          </button>
+        </main>
+      )}
+      {room && (
+        <>
+          <main className="room-layout">
+            <section className="room-intro">
+              <div>
+                <span className="eyebrow">YOUR SHARED LISTENING SPACE</span>
+                <h1>
+                  In good company<span>.</span>
+                </h1>
+                <p>
+                  Welcome, {me?.name || 'music lover'}. Settle in and find your
+                  next favorite.
+                </p>
+              </div>
+              <div className="room-number">
+                <span>ROOM CODE</span>
+                <button
+                  onClick={() => copy('code')}
+                  aria-label="Copy room code"
+                >
+                  <strong>{room.code}</strong>
+                  <Icon name={copied === 'code' ? 'check' : 'copy'} size={18} />
+                </button>
+              </div>
+            </section>
+            <aside className="left-column">
+              <UploadCard
+                upload={upload}
+                disabled={!connected}
+                setError={setError}
+              />
+              <section className="invite-panel">
+                <div className="invite-icon">
+                  <Icon name="link" size={19} />
                 </div>
-                <div className="upload-body">
-                  <div className="file-input-wrapper">
-                    <input
-                      type="file"
-                      accept="audio/*"
-                      onChange={(e) => setSelectedSong(e.target.files[0])}
-                      id="file-input"
-                      className="file-input"
-                    />
-                    <label htmlFor="file-input" className="file-input-label">
-                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <path
-                          d="M12 2V14"
-                          stroke="currentColor"
-                          strokeWidth="2"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                        />
-                        <path
-                          d="M3 12L12 3L21 12"
-                          stroke="currentColor"
-                          strokeWidth="2"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                        />
-                        <path
-                          d="M3 17V19C3 19.5304 3.21071 20.0391 3.58579 20.4142C3.96086 20.7893 4.46957 21 5 21H19C19.5304 21 20.0391 20.7893 20.4142 20.4142C20.7893 20.0391 21 19.5304 21 19V17"
-                          stroke="currentColor"
-                          strokeWidth="2"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                        />
-                      </svg>
-                      {selectedSong ? selectedSong.name : "Choose audio file"}
-                    </label>
-                  </div>
-                  <div className="supported-formats">
-                    <span>Supported: MP3, WAV, OGG</span>
-                  </div>
-                  <button className="upload-btn" onClick={uploadSong} disabled={!selectedSong||isLoading}>
-                    {isLoading?(
-                      <div style={{display:"flex",alignItems:"center"}}>
-                        <div className="spinner"/>
-                        Uploading...
-                      </div>):(<>
-                      
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                      <path
-                        d="M21 15V19C21 19.5304 20.7893 20.0391 20.4142 20.4142C20.0391 20.7893 19.5304 21 19 21H5C4.46957 21 3.96086 20.7893 3.58579 20.4142C3.21071 20.0391 3 19.5304 3 19V15"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                      <path
-                        d="M7 10L12 5L17 10"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                      <path
-                        d="M12 5V15"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                    </svg>
-                    Upload Song
-                    </>)}
+                <h2>Better with friends.</h2>
+                <p>
+                  Send them your room link.
+                  <br />
+                  We’ll take care of the sync.
+                </p>
+                <button className="text-button" onClick={() => copy('link')}>
+                  {copied === 'link' ? 'Link copied' : 'Copy invite link'}
+                  <Icon
+                    name={copied === 'link' ? 'check' : 'arrow'}
+                    size={17}
+                  />
+                </button>
+              </section>
+              <p className="retention-note">
+                Room tracks are temporary and are removed after the room
+                expires.
+              </p>
+            </aside>
+            <section className="playlist panel">
+              <div className="playlist-heading">
+                <div>
+                  <span className="eyebrow">THE ROOM’S ROTATION</span>
+                  <h2>On the playlist</h2>
+                </div>
+                <div className="playlist-actions">
+                  <button
+                    className="icon-button"
+                    aria-label="Refresh playlist"
+                    onClick={refreshPlaylist}
+                    disabled={!connected}
+                  >
+                    <Icon name="refresh" size={16} />
                   </button>
+                  <span className="count-badge">
+                    {songs.length} {songs.length === 1 ? 'track' : 'tracks'}
+                  </span>
                 </div>
               </div>
-            </div>
-            <div className="room-info-card">
-              <div className="room-id-label">Room</div>
-              <div className="room-id-row">
-                <span className="room-id-tag">{room}</span>
-                <button className="copy-btn" onClick={handleCopy}>
-                        {isCopied?<FaCheck/>:<FaCopy/>}
-                        <span className="copy-text">
-                        {isCopied?"Copied":"Copy"}</span>
-                </button>
+              <div className="track-column-labels">
+                <span>#</span>
+                <span>TRACK</span>
+                <span>SOURCE</span>
+              </div>
+              {songs.length === 0 ? (
+                <div className="empty-playlist">
+                  <span>
+                    <Icon name="music" size={34} />
+                  </span>
+                  <h3>Every good room starts with a song.</h3>
+                  <p>Upload a favorite to get everyone in sync.</p>
                 </div>
-                <p className="share-text">Share this ID with friends to sync up!</p>
-            </div>
-            <div className="room-info-card">
-              <div className="note-text">
-            <p>Note : If not working in sync , try to refresh </p>
-            <p></p>
-            <p>ps : May have some issues with mobile</p>
-            <p>For any issues mail me ;)</p><br></br>
-            </div>
-            <div className="social-links">
-              <a href="https://github.com/shokuyansh/SonicCircle"><FaGithub size={24}></FaGithub></a>
-              <a href="mailto:anshmalgotra@gmail.com"><CiMail size={24}></CiMail></a>
-              <a href="https://www.linkedin.com/in/ansh-malgotra-7b39b1274/"><CiLinkedin size={24}></CiLinkedin></a>
-            </div>
-            </div>
-          </div>
-          <div className="center-column">
-            <Songs room={room} onSongUploaded={songUploaded} />
-          </div>
-          <div className="right-column">
-            <RoomMember room={room} />
-          </div>
-        </div>
+              ) : (
+                <div className="track-list">
+                  {songs.map((song, index) => {
+                    const active = song.id === room.playback.songId
+                    return (
+                      <button
+                        className={`track ${active ? 'active' : ''}`}
+                        key={song.id}
+                        onClick={() => player.select(song.id)}
+                        disabled={!connected}
+                        aria-pressed={active}
+                        aria-label={`Play ${song.name}`}
+                      >
+                        <span className="track-number">
+                          {active && player.playing ? (
+                            <Bars small />
+                          ) : (
+                            <>
+                              <span className="track-index">
+                                {String(index + 1).padStart(2, '0')}
+                              </span>
+                              <Icon
+                                name="play"
+                                size={15}
+                                className="track-play"
+                              />
+                            </>
+                          )}
+                        </span>
+                        <span className="track-description">
+                          <strong>
+                            {song.name.replace(/\.(mp3|wav|ogg)$/i, '')}
+                          </strong>
+                          <span>
+                            {song.contentType === 'audio/mpeg'
+                              ? 'MP3'
+                              : song.contentType
+                                  .split('/')
+                                  .pop()
+                                  .toUpperCase()}{' '}
+                            · {(song.size / 1024 / 1024).toFixed(1)} MB
+                          </span>
+                        </span>
+                        <span
+                          className={`source-tag ${song.default ? 'default' : ''}`}
+                        >
+                          {song.default ? 'House pick' : 'Room upload'}
+                        </span>
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+              <div className="playlist-footnote">
+                <Icon name="headphones" size={16} />
+                <span>Seek together. Pause just for you.</span>
+              </div>
+            </section>
+            <aside className="right-column">
+              <section className="panel members-panel">
+                <div className="members-heading">
+                  <h2>The listening party</h2>
+                  <span className="count-badge">{online}</span>
+                </div>
+                <p className="muted">
+                  <span className="live-dot" />{' '}
+                  {online === 1
+                    ? 'A little company is one invite away.'
+                    : 'Different places. Same soundtrack.'}
+                </p>
+                <ul className="member-list">
+                  {room.members.map((member, index) => (
+                    <li key={member.id}>
+                      <span className={`avatar avatar-${index % 4}`}>
+                        {member.name
+                          .split(' ')
+                          .map((part) => part[0])
+                          .join('')}
+                        <span
+                          className={`member-dot ${member.connected ? '' : 'disconnected'}`}
+                        />
+                      </span>
+                      <div>
+                        <strong>{member.name}</strong>
+                        <span>
+                          {member.connected ? 'In the room' : 'Reconnecting'}
+                        </span>
+                      </div>
+                      {member.id === session?.memberId && (
+                        <span className="you-badge">you</span>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </section>
+              <section className="sync-note">
+                <span className="sync-symbol">
+                  <Bars small active={connected} />
+                </span>
+                <h3>On the same wavelength.</h3>
+                <p>
+                  Seeks update everyone. Need a break? Pause locally, then press
+                  play to catch up with the room.
+                </p>
+              </section>
+            </aside>
+          </main>
+          <audio ref={player.audio} preload="auto" />
+          <Player player={player} connected={connected} />
+        </>
       )}
-      <ToastContainer/>
+      {!room && (
+        <footer className="welcome-footer">
+          <span>Made for the moments between the songs.</span>
+          <span>Listen. Together.</span>
+        </footer>
+      )}
     </div>
   )
 }
-
-export default App

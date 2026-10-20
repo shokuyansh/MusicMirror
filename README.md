@@ -1,76 +1,104 @@
-MusicMirror 
+# MusicMirror
 
-Overview
+A shared listening room for friends. Create a room, send its invite link, upload
+music, and listen together. No accounts required.
 
-Welcome to MusicMirror, a real-time collaborative music synchronization application. This project aims to provide a seamless way for friends to enjoy music together by syncing playback in virtual rooms. 
+- **Go backend:** `net/http`, `database/sql` with `github.com/lib/pq`, and native
+  WebSockets with `github.com/coder/websocket`.
+- **React + Vite frontend:** accessible keyboard controls, responsive layout,
+  reconnect handling, and clear local-pause/autoplay states.
+- **Supabase:** private audio storage and PostgreSQL metadata. Browsers stream
+  using temporary URLs; storage credentials stay on the server.
 
-Highlights
+## Playback behavior
 
-    Real-time Music Sync: Play songs in perfect synchronization with all members in a room.
+Selecting a track or seeking changes playback for the room. Pausing and volume
+changes affect only you. Press play to fetch the latest room timeline and resume
+in sync. A periodic clock exchange and drift correction keep active listeners
+aligned. Late joins and reconnects use the server's timeline.
 
-    Room Management: Create new private rooms with unique IDs or join existing ones.
+Rooms accept up to 20 listeners and expire after six hours, or after two minutes
+with nobody connected. Disconnected sessions can rejoin within two minutes.
+Room uploads are temporary; default tracks persist. A backend restart ends live
+rooms. Browser buffering and background throttling can affect sync precision.
 
-    Dynamic Usernames: Each user is assigned a random, fun name for easy identification within the room.
+## Run locally
 
-    Song Uploads: Contribute to the room's playlist by uploading your own audio files (MP3, WAV, OGG).
+Requires **Go 1.25+** and **Node 22.12+**. No Supabase account is needed locally.
 
-    Default Playlist: Enjoy a curated selection of default songs readily available in every room.
+In one terminal:
 
-    Room Member Display: See who else is online and jamming with you in real-time.
+```sh
+cd server
+go run ./cmd/musicmirror
+```
 
-🚀 Technologies Used
+In another:
 
-MusicMirror is built using a modern MERN stack variant with WebSockets for real-time communication.
+```sh
+cd client
+npm ci
+npm run dev
+```
 
-Client-side (Frontend)
+Open `http://localhost:5173`. Vite proxies API, WebSocket, and local audio requests
+to port 3001. Local mode uses in-memory metadata and files under `server/data`;
+playlists and URL grants reset on restart. Production requires all Supabase
+settings and refuses this temporary local mode.
 
-    React.js: For building interactive user interfaces.
+Environment variable names are listed in [server/.env.example](server/.env.example)
+and [client/.env.example](client/.env.example). Vite reads frontend `.env` files.
+Go reads the process environment; it does **not** load `.env` automatically.
+When using a backend `.env`, quote its secret values and load it in your shell
+before running Go:
 
-    Vite: A fast build tool for development and optimized production builds.
+```sh
+set -a
+. ./.env
+set +a
+go run ./cmd/musicmirror
+```
 
-    Socket.IO Client: Enables real-time, bidirectional communication.
+## Checks
 
-    Axios: Promise-based HTTP client for API interactions.
+From the project root:
 
-    React Icons & React Toastify: For UI enhancements and user feedback.
+```sh
+make hooks             # Install the backend pre-commit check for this checkout
+make check-backend     # gofmt, go vet, race-enabled unit and integration tests
+make check-frontend    # ESLint, formatting, sync unit tests, production build
+```
 
-Server-side (Backend)
+To include real PostgreSQL tests, set `TEST_DATABASE_URL` to a **dedicated test
+database** before running `make check-backend`. The suite creates the metadata
+table and round-trips test rows. Without that variable only the PostgreSQL test
+is skipped; HTTP, WebSocket, object storage and room tests still run locally.
+CI always supplies a PostgreSQL service.
 
-    Node.js & Express.js: For the server-side application and API endpoints.
+For browser tests:
 
-    Socket.IO: Powers the real-time music synchronization and room member updates.
+```sh
+cd client
+npx playwright install chromium
+npm run test:e2e
+```
 
-    Multer: Handles multipart/form-data for file uploads.
+Playwright starts the local Go and Vite servers. Tests cover two listeners,
+seeking, local pause/resume, late joins, reloads, reconnects, multiple uploads,
+autoplay rejection, track advancement, simulated network latency, and a mobile
+viewport. Backend tests also cover authorization, origin checks, concurrent
+commands, quota races, expiry, slow peers, and failed cleanup retries.
 
-    Cloudinary: Stores and manages uploaded audio files.
+## Deploy online for free
 
-    Dotenv & Nodemon: For environment variable management and development server hot-reloading.
+Follow [the deployment guide](docs/deployment.md). It includes Supabase setup,
+exact Render environment variables, optional default-song import, free-plan
+limits, and deployment checks. [render.yaml](render.yaml) defines a free backend
+and static frontend; it provisions no paid database or disk.
 
-💡 Usage
+The app runs on free plans **within provider quotas**. Supabase inactivity pauses
+require a manual dashboard resume. Existing Cloudinary files are not migrated
+automatically. Nothing is deployed by running the local test suite.
 
-    Welcome & Naming: When you open the application, a modal will appear. You'll be assigned a random, fun username.
-
-    Room Actions:
-
-        To create a new shared space, click the "🎵 Create Room" button. A unique 6-character room ID will be generated for you.
-
-        To join an existing room, enter the room ID in the provided input boxes and click "🎵 Join Room".
-
-    Share Your Room: Once in a room, you can easily copy the room ID displayed on the left column to invite your friends.
-
-    Upload Songs: In the "Upload Music" section, select an audio file (MP3, WAV, OGG) from your device and click "Upload Song" to add it to your room's shared playlist.
-
-    Play & Sync: Choose any song from the "Playlist" section. The playback will instantly synchronize for everyone in the room. You can play, pause, or seek through the song using the controls at the bottom.
-
-    View Members: The right column will show you all the current members in your room.
-
-Note: If synchronization issues occur, try refreshing your page. Please be aware that the mobile experience may have some limitations.
-
-
-📞 Contact
-
-For any issues or inquiries, feel free to reach out to the developer:
-
-    Email: anshmalgotra@gmail.com
-
-    LinkedIn: Ansh Malgotra
+See [architecture and transport contract](docs/architecture.md) for implementation
+boundaries and playback semantics.
