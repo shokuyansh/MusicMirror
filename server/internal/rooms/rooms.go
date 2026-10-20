@@ -59,7 +59,8 @@ type Session struct {
 
 type participant struct {
 	Member
-	updates chan string
+	updates        chan string
+	disconnectedAt time.Time
 }
 
 type room struct {
@@ -124,7 +125,7 @@ func (m *Manager) add(r *room) Session {
 	adjectives := []string{"Mellow", "Sunny", "Cosmic", "Groovy", "Velvet", "Electric", "Dreamy", "Golden"}
 	animals := []string{"Otter", "Panda", "Fox", "Owl", "Koala", "Tiger", "Robin", "Lynx"}
 	name := adjectives[len(r.members)%len(adjectives)] + " " + animals[int(id[0])%len(animals)]
-	r.members[hash] = &participant{Member: Member{ID: id, Name: name}}
+	r.members[hash] = &participant{Member: Member{ID: id, Name: name}, disconnectedAt: m.now()}
 	m.tokens[hash] = r
 	m.notify(r, "snapshot", nil)
 	return Session{Token: token, MemberID: id, Room: m.snapshot(r)}
@@ -139,6 +140,10 @@ func (m *Manager) find(token string) (*room, [32]byte, error) {
 	hash := sha256.Sum256([]byte(token))
 	r := m.tokens[hash]
 	if r == nil || m.expired(r) {
+		return nil, hash, ErrSession
+	}
+	p := r.members[hash]
+	if !p.Connected && !p.disconnectedAt.IsZero() && !m.now().Before(p.disconnectedAt.Add(EmptyGrace)) {
 		return nil, hash, ErrSession
 	}
 	return r, hash, nil
@@ -223,6 +228,7 @@ func (m *Manager) Subscribe(token string) (<-chan string, func(), error) {
 	}
 	updates := make(chan string, 16)
 	p.updates, p.Connected = updates, true
+	p.disconnectedAt = time.Time{}
 	r.emptySince = time.Time{}
 	m.notify(r, "snapshot", p)
 	detach := func() {
@@ -233,6 +239,7 @@ func (m *Manager) Subscribe(token string) (<-chan string, func(), error) {
 		}
 		close(updates)
 		p.updates, p.Connected = nil, false
+		p.disconnectedAt = m.now()
 		m.markEmpty(r)
 		m.notify(r, "snapshot", p)
 	}
@@ -261,6 +268,7 @@ func (m *Manager) notify(r *room, event string, except *participant) {
 			// A slow peer must reconnect and fetch a complete snapshot.
 			close(p.updates)
 			p.updates, p.Connected = nil, false
+			p.disconnectedAt = m.now()
 		}
 	}
 	m.markEmpty(r)
@@ -299,6 +307,17 @@ func (m *Manager) Expire() []string {
 	var codes []string
 	for code, r := range m.rooms {
 		if !m.expired(r) {
+			pruned := false
+			for hash, p := range r.members {
+				if !p.Connected && !p.disconnectedAt.IsZero() && !m.now().Before(p.disconnectedAt.Add(EmptyGrace)) {
+					delete(r.members, hash)
+					delete(m.tokens, hash)
+					pruned = true
+				}
+			}
+			if pruned {
+				m.notify(r, "snapshot", nil)
+			}
 			continue
 		}
 		for hash, p := range r.members {

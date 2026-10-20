@@ -193,3 +193,39 @@ func TestSnapshotsAreIndependentCopies(t *testing.T) {
 		t.Fatal("snapshot aliases internal state")
 	}
 }
+
+func TestDisconnectedMembersExpireWithoutEvictingActiveListeners(t *testing.T) {
+	m, now := fixture()
+	a, _ := m.Create()
+	_, detach, _ := m.Subscribe(a.Token)
+	defer detach()
+	b, _ := m.Join(a.Room.Code)
+	*now = now.Add(EmptyGrace)
+	m.Expire()
+	if _, err := m.Snapshot(b.Token); !errors.Is(err, ErrSession) {
+		t.Fatal("stale session survived", err)
+	}
+	state, err := m.Snapshot(a.Token)
+	if err != nil || len(state.Members) != 1 {
+		t.Fatal(state, err)
+	}
+	if _, err := m.Join(a.Room.Code); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestSlowSubscribersAreDroppedInsteadOfBlockingRoom(t *testing.T) {
+	m, _ := fixture()
+	a, _ := m.Create()
+	updates, detach, _ := m.Subscribe(a.Token)
+	defer detach()
+	for i := 0; i < 32; i++ {
+		m.NotifyPlaylist(a.Token)
+	}
+	state, _ := m.Snapshot(a.Token)
+	if state.Members[0].Connected {
+		t.Fatal("slow member not disconnected")
+	}
+	for range updates {
+	}
+}

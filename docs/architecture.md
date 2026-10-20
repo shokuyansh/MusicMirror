@@ -19,7 +19,7 @@ The server generates six-character room codes, random display names, and 256-bit
 session tokens. A room code is an invitation: anyone with it can join. Tokens are
 stored in sessionStorage and authorize HTTP requests. WebSockets authenticate in
 their first message, never in a URL. The server stores token hashes in memory.
-Sessions survive temporary socket disconnects. A new connection replaces the old
+Sessions survive socket disconnects for up to two minutes. A new connection replaces the old
 connection for that session. Rooms expire after six hours, or after two minutes
 with no connected members. Explicit leave revokes the session.
 
@@ -64,7 +64,7 @@ HTTP JSON errors use {"error": "safe public message"}. All responses are no-stor
 | DELETE /api/session | Leave room and revoke session |
 | GET /api/songs | List default and room songs with signed playback URLs |
 | POST /api/songs | Upload multipart field `song` to current room |
-| GET /api/media/{id} | Authenticated local-development audio only |
+| GET /media/{key} | Signed local-development audio URL with byte-range support |
 | GET /api/ws | Native WebSocket |
 
 First WS message: {"type":"auth","token":"..."}. Server sends a `snapshot`.
