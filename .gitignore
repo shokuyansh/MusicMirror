@@ -1,0 +1,12 @@
+.env
+.env.*
+!.env.example
+node_modules/
+dist/
+server/data/
+server/musicmirror
+coverage.out
+playwright-report/
+test-results/
+*.log
+
